@@ -32,7 +32,7 @@ Author:              Markus Barenhoff
 Maintainer:          mbarenh@alios.org
 
 -- A copyright notice.
--- Copyright:           
+Copyright: (c)2010 Markus Barenhoff          
 
 -- Stability of the pakcage (experimental, provisional, stable...)
 Stability:           Alpha
@@ -54,7 +54,7 @@ Library
   Exposed-modules: GisServer.Data.ISO8211    
   
   -- Packages needed in order to build this package.
-  -- Build-depends:       
+  Build-depends: haskell98, base > 4, binary, bytestring      
   
   -- Modules not exported by this package.
   -- Other-modules:       

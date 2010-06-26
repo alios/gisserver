@@ -1,17 +1,17 @@
-module ISO8211(ExchangeFile, LogicRecord, Leader) where
+module GisServer.Data.ISO8211 (ExchangeFile, LogicRecord, Leader, ddr, records) where
 
-import Data.Binary as BIN
+import Int
+import Data.Binary
 import Data.Binary.Get
 import Data.Char
-import Data.Int
-
+import qualified Data.Map as M
 import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as B
 
 data ExchangeFile =
   ExchangeFile {
-    exf_ddr :: LogicRecord,
-    exf_drs :: [LogicRecord]
+    ddr :: LogicRecord,
+    records :: [LogicRecord]
     } deriving (Eq, Show)
 
 data LogicRecord = 
@@ -20,6 +20,14 @@ data LogicRecord =
     lr_directory :: DirMap
     } deriving (Eq, Show)
   
+type DirMap = M.Map String B.ByteString
+
+class DDR r where 
+  fieldcontrolField :: r -> ()
+  
+instance DDR LogicRecord where
+  
+
 data Leader = 
   Leader {
     leader_recordLength :: Int64,
@@ -85,16 +93,7 @@ instance Binary LogicRecord where
     let fieldAreaLen = (leader_recordLength leader) - (leader_dataBase leader)
     fields <- getLazyByteString fieldAreaLen
     let dir2lookup' = dir2lookup fields 
-    return $ LogicRecord leader (map dir2lookup' dir)
-
-type DirMapEntry = (String, B.ByteString)
-type DirMap = [DirMapEntry]
-
-dir2lookup :: B.ByteString -> DirEntry -> DirMapEntry 
-dir2lookup area (tag, pos, len) = (tag, 
-                                   (B.take (fromIntegral len) 
-                                    ((B.drop $ fromIntegral pos) area)))
-  
+    return $ LogicRecord leader $ M.fromList (map dir2lookup' dir)
 
 instance Binary Leader where
   get = do 
@@ -125,6 +124,21 @@ instance Binary EntryMap where
   
 fieldTerm = '\RS'
 recordTerm = '\US'
+
+ddrId = 'L'
+drId = 'D'
+
+
+dir2lookup :: B.ByteString -> DirEntry -> (String, B.ByteString) 
+dir2lookup area (tag, pos, len) = (tag, 
+                                   (B.take (fromIntegral len) 
+                                    ((B.drop $ fromIntegral pos) area)))
+  
+
+
+isDDR (LogicRecord l _) = leader_id l == ddrId
+isDR (LogicRecord l _) = leader_id l == drId                
+
 
 getStringTill :: Char -> Get String
 getStringTill c = do
