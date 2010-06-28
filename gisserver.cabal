@@ -51,7 +51,7 @@ Cabal-version:       >=1.2
 
 Library
   -- Modules exported by the library.
-  Exposed-modules: GisServer.Data.ISO8211    
+  Exposed-modules: GisServer.Data.ISO8211, GisServer.Data.S57
   
   -- Packages needed in order to build this package.
   Build-depends: haskell98, base > 4, containers, binary, bytestring      

@@ -1,12 +1,19 @@
-module GisServer.Data.ISO8211 (ExchangeFile, LogicRecord, Leader, ddr, records) where
+{-# OPTIONS -fglasgow-exts #-}
+
+module GisServer.Data.ISO8211 
+       (ExchangeFile, LogicRecord, Leader, ddr, records, lr_leader, lr_directory
+       ,fcf_fileTitle, fcf_tagTree, hasRecordField) where
 
 import Int
 import Data.Binary
 import Data.Binary.Get
 import Data.Char
 import Data.Bits
+import Data.Tree
 import qualified Data.Map as M
 import qualified Data.ByteString.Lazy as B
+
+import GisServer.Data.Common
 
 data ExchangeFile =
   ExchangeFile {
@@ -22,6 +29,9 @@ data LogicRecord =
   
 type DirMap = M.Map String (Maybe FieldControls, Field)
   
+hasRecordField :: String -> LogicRecord -> Bool
+hasRecordField q (LogicRecord _ d) = M.member q d 
+
 
 data Leader = 
   Leader {
@@ -46,11 +56,11 @@ data EntryMap =
                
 data Field = 
   Field {
-    field_data :: [B.ByteString]
+    field_data :: B.ByteString
     } | 
   FieldCtrlField {
     fcf_fileTitle :: String,
-    fcf_tagPairs :: [(String, String)]
+    fcf_tagTree :: Tree String
     } | 
   DataDescriptiveField {
     ddf_name :: String,
@@ -85,17 +95,13 @@ instance Enum DataTypeCode where
 instance Binary DataTypeCode where
   get = fmap toEnum $ getIntN 1  
 
-data LexicalLevel = 
-  LexLevel0 | LexLevel1 | LexLevel2                                
-  deriving (Eq, Show, Ord, Enum)
-
 instance Binary LexicalLevel where
   get = do
     escSeq <- getStringN 3
     return $ case escSeq of
-      "   " -> LexLevel0
-      "-A " -> LexLevel1
-      "%/A" -> LexLevel2
+      "   " -> lexLevel 0
+      "-A " -> lexLevel 1
+      "%/A" -> lexLevel 2
  
 
 data FieldControls = FieldControls {
@@ -190,11 +196,6 @@ instance Binary EntryMap where
     return $ EntryMap sizeFieldLen sizeFieldPos sizeFieldTag
   
 
-fieldTermChar = '\RS'
-fieldTerm :: Word8
-fieldTerm = fromIntegral $ ord fieldTermChar
-recordTermChar = '\US'
-recordTerm = fromIntegral $ ord recordTermChar
 
 ddrId = 'L'
 drId = 'D'
@@ -209,12 +210,8 @@ dir2lookup area fcl (tag, pos, len) =
               lex = fc_lexLevel fctrls
               field' = B.drop (fromIntegral fcl) field
           in (tag, (Just fctrls, parseDDRField lex tag field'))
-     else (tag, (Nothing, parseDRField field))
+     else (tag, (Nothing, Field field))
 
-
-
-parseDRField :: B.ByteString -> Field
-parseDRField field = Field $ B.split recordTerm field
 
 
 parseDDRField :: LexicalLevel -> String -> B.ByteString -> Field
@@ -228,48 +225,25 @@ parseDDRField lex tag field =
            then [] 
            else (byteS2String lex t1, byteS2String lex t2) : splitTagPairs ts
   in case tag of 
-    "0000" -> FieldCtrlField (byteS2String lex (subfields !! 0)) (splitTagPairs $ subfields !! 1)
+    "0000" -> FieldCtrlField 
+              (byteS2String lex (subfields !! 0)) 
+              (buildTree (splitTagPairs $ subfields !! 1))
     otherwise -> DataDescriptiveField
                  (byteS2String lex (subfields !! 0))
                  (subfields !! 1)
                  (subfields !! 2)
     
                  
-  
+buildTree :: [(String, String)] -> Tree String
+buildTree vs =
+  let lu :: String -> [String] 
+      lu q = map snd $ filter (\(t, _) -> t == q) vs
+      lu' q = (q, lu q)
+      (root, _) = vs !! 0
+  in unfoldTree lu' root
+     
 
 isDDR (LogicRecord l _) = leader_id l == ddrId
 isDR (LogicRecord l _) = leader_id l == drId                
 
-
-getStringTill :: Char -> Get String
-getStringTill c = do
-  c' <- get
-  if (c' == c)
-    then do return [c']
-    else do cs <- getStringTill c
-            return $ c:cs
-
-                 
-
-getStringN :: Int -> Get String
-getStringN n
-  | n == 0    = do return []
-  | n < 0     = fail "n must not be smaller 0"
-  | otherwise = do
-    c <- get
-    s <- getStringN (n - 1)
-    return $ c : s
-  
-getIntN :: Int -> Get Int  
-getIntN n = do  
-  bs <- fmap (byteS2String LexLevel0) $ getLazyByteString $ fromIntegral n
-  return $ read bs
-  
-
-byteS2String enc bs = map (word8char enc) $ B.unpack bs
-
-word8char :: LexicalLevel -> Word8 -> Char
-word8char LexLevel0 w = chr.fromIntegral $ w .&. 0x7F
-word8char LexLevel1 w = chr $ fromIntegral w
-word8char LexLevel2 w = undefined
 
