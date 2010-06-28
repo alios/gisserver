@@ -194,7 +194,7 @@ fieldTermChar = '\RS'
 fieldTerm :: Word8
 fieldTerm = fromIntegral $ ord fieldTermChar
 recordTermChar = '\US'
-recordTerm = fromIntegral $ ord fieldTermChar
+recordTerm = fromIntegral $ ord recordTermChar
 
 ddrId = 'L'
 drId = 'D'
@@ -202,7 +202,7 @@ drId = 'D'
 
 dir2lookup :: B.ByteString -> Int -> DirEntry -> (String, ((Maybe FieldControls), Field)) 
 dir2lookup area fcl (tag, pos, len) = 
-  let field = B.take (fromIntegral len) 
+  let field = B.takeWhile ((/=) fieldTerm) $ B.take (fromIntegral len) 
               (B.drop (fromIntegral pos) area)
   in if (fcl > 0) 
      then let fctrls  = decode $ B.take (fromIntegral fcl) field
@@ -214,8 +214,7 @@ dir2lookup area fcl (tag, pos, len) =
 
 parseField :: String -> Maybe FieldControls -> B.ByteString -> Field
 parseField tag fctrls field = 
-  let field' = B.takeWhile ((/=) fieldTerm) field
-      subfields = B.split recordTerm field'
+  let subfields = B.split recordTerm field
   in Field subfields
   
 
