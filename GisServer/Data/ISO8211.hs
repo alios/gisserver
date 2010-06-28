@@ -20,12 +20,7 @@ data LogicRecord =
     lr_directory :: DirMap
     } deriving (Eq, Show)
   
-type DirMap = M.Map String B.ByteString
-
-class DDR r where 
-  fieldcontrolField :: r -> ()
-  
-instance DDR LogicRecord where
+type DirMap = M.Map String (Maybe FieldControls, Field)
   
 
 data Leader = 
@@ -49,6 +44,78 @@ data EntryMap =
     em_sizeFieldTag :: Int
     } deriving (Eq, Show)
                
+data Field = 
+  Field {
+    field_data :: [B.ByteString]
+    } | 
+  FieldCtrlField {
+    fcf_fileTitle :: String,
+    fcf_tagPairs :: [(String, String)]
+    } | 
+  DataDescriptiveField {
+    ddf_name :: String,
+    ddf_arrayDesc :: B.ByteString,
+    ddf_formatCtrls :: B.ByteString
+    }
+  deriving (Eq, Show)
+                          
+           
+data DataStructureCode = 
+  FieldCtrlFieldStruct | LinearStruct | MultiDimensionalStructure
+  deriving (Eq, Show, Ord, Enum)
+
+instance Binary DataStructureCode where
+  get = fmap toEnum $ getIntN 1  
+
+
+data DataTypeCode =                               
+  CharacterString | ImplicitPoint | BinaryForm | MixedDataTypes
+  deriving (Eq, Show, Ord)                                                 
+           
+instance Enum DataTypeCode where
+  fromEnum CharacterString = 0
+  fromEnum ImplicitPoint = 1
+  fromEnum BinaryForm = 5
+  fromEnum MixedDataTypes = 6
+  toEnum 0 = CharacterString
+  toEnum 1 = ImplicitPoint
+  toEnum 5 = BinaryForm
+  toEnum 6 = MixedDataTypes
+                                                 
+instance Binary DataTypeCode where
+  get = fmap toEnum $ getIntN 1  
+
+data LexicalLevel = 
+  LexLevel0 | LexLevel1 | LexLevel2                                
+  deriving (Eq, Show, Ord, Enum)
+
+instance Binary LexicalLevel where
+  get = do
+    escSeq <- getStringN 3
+    return $ case escSeq of
+      "   " -> LexLevel0
+      "-A " -> LexLevel1
+      "%/A" -> LexLevel2
+ 
+
+data FieldControls = FieldControls {
+  fc_dataStructCode :: DataStructureCode,
+  fc_dataTypeCode :: DataTypeCode,
+  fc_auxCtrl :: String,
+  fc_printableGraphics :: String,
+  fc_truncatedEscapeSequence :: LexicalLevel
+  } deriving (Eq, Show)
+
+
+instance Binary FieldControls where
+  get = do
+    structCode <- get
+    typeCode <- get
+    auxCtrl <- getStringN 2
+    printableGraphics <- getStringN 2
+    lexLevel <- get
+    return $ FieldControls structCode typeCode auxCtrl printableGraphics lexLevel
+
 type Directory = [DirEntry]
 type DirEntry = (String, Int64, Int64)
 
@@ -92,7 +159,7 @@ instance Binary LogicRecord where
     dir <- getDirectory $ leader_entryMap leader
     let fieldAreaLen = (leader_recordLength leader) - (leader_dataBase leader)
     fields <- getLazyByteString fieldAreaLen
-    let dir2lookup' = dir2lookup fields 
+    let dir2lookup' = dir2lookup fields (leader_fieldCtrlLen leader)
     return $ LogicRecord leader $ M.fromList (map dir2lookup' dir)
 
 instance Binary Leader where
@@ -122,19 +189,35 @@ instance Binary EntryMap where
     sizeFieldTag <- getIntN 1
     return $ EntryMap sizeFieldLen sizeFieldPos sizeFieldTag
   
-fieldTerm = '\RS'
-recordTerm = '\US'
+
+fieldTermChar = '\RS'
+fieldTerm :: Word8
+fieldTerm = fromIntegral $ ord fieldTermChar
+recordTermChar = '\US'
+recordTerm = fromIntegral $ ord fieldTermChar
 
 ddrId = 'L'
 drId = 'D'
 
 
-dir2lookup :: B.ByteString -> DirEntry -> (String, B.ByteString) 
-dir2lookup area (tag, pos, len) = (tag, 
-                                   (B.take (fromIntegral len) 
-                                    ((B.drop $ fromIntegral pos) area)))
-  
+dir2lookup :: B.ByteString -> Int -> DirEntry -> (String, ((Maybe FieldControls), Field)) 
+dir2lookup area fcl (tag, pos, len) = 
+  let field = B.take (fromIntegral len) 
+              (B.drop (fromIntegral pos) area)
+  in if (fcl > 0) 
+     then let fctrls  = decode $ B.take (fromIntegral fcl) field
+              field' = B.drop (fromIntegral fcl) field
+          in (tag, (Just fctrls, parseField tag (Just fctrls) field'))
+     else (tag, (Nothing, parseField tag Nothing field))
 
+
+
+parseField :: String -> Maybe FieldControls -> B.ByteString -> Field
+parseField tag fctrls field = 
+  let field' = B.takeWhile ((/=) fieldTerm) field
+      subfields = B.split recordTerm field'
+  in Field subfields
+  
 
 isDDR (LogicRecord l _) = leader_id l == ddrId
 isDR (LogicRecord l _) = leader_id l == drId                
