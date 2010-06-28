@@ -4,8 +4,8 @@ import Int
 import Data.Binary
 import Data.Binary.Get
 import Data.Char
+import Data.Bits
 import qualified Data.Map as M
-import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as B
 
 data ExchangeFile =
@@ -103,7 +103,7 @@ data FieldControls = FieldControls {
   fc_dataTypeCode :: DataTypeCode,
   fc_auxCtrl :: String,
   fc_printableGraphics :: String,
-  fc_truncatedEscapeSequence :: LexicalLevel
+  fc_lexLevel :: LexicalLevel
   } deriving (Eq, Show)
 
 
@@ -206,16 +206,35 @@ dir2lookup area fcl (tag, pos, len) =
               (B.drop (fromIntegral pos) area)
   in if (fcl > 0) 
      then let fctrls  = decode $ B.take (fromIntegral fcl) field
+              lex = fc_lexLevel fctrls
               field' = B.drop (fromIntegral fcl) field
-          in (tag, (Just fctrls, parseField tag (Just fctrls) field'))
-     else (tag, (Nothing, parseField tag Nothing field))
+          in (tag, (Just fctrls, parseDDRField lex tag field'))
+     else (tag, (Nothing, parseDRField field))
 
 
 
-parseField :: String -> Maybe FieldControls -> B.ByteString -> Field
-parseField tag fctrls field = 
+parseDRField :: B.ByteString -> Field
+parseDRField field = Field $ B.split recordTerm field
+
+
+parseDDRField :: LexicalLevel -> String -> B.ByteString -> Field
+parseDDRField lex tag field = 
   let subfields = B.split recordTerm field
-  in Field subfields
+      splitTagPairs :: B.ByteString -> [(String,String)]
+      splitTagPairs bs = 
+        let (t1,t2s) = B.splitAt 4 bs
+            (t2,ts) = B.splitAt 4 t2s
+        in if(bs == B.empty) 
+           then [] 
+           else (byteS2String lex t1, byteS2String lex t2) : splitTagPairs ts
+  in case tag of 
+    "0000" -> FieldCtrlField (byteS2String lex (subfields !! 0)) (splitTagPairs $ subfields !! 1)
+    otherwise -> DataDescriptiveField
+                 (byteS2String lex (subfields !! 0))
+                 (subfields !! 1)
+                 (subfields !! 2)
+    
+                 
   
 
 isDDR (LogicRecord l _) = leader_id l == ddrId
@@ -243,6 +262,14 @@ getStringN n
   
 getIntN :: Int -> Get Int  
 getIntN n = do  
-  bs <- fmap C.unpack $ getByteString n
+  bs <- fmap (byteS2String LexLevel0) $ getLazyByteString $ fromIntegral n
   return $ read bs
   
+
+byteS2String enc bs = map (word8char enc) $ B.unpack bs
+
+word8char :: LexicalLevel -> Word8 -> Char
+word8char LexLevel0 w = chr.fromIntegral $ w .&. 0x7F
+word8char LexLevel1 w = chr $ fromIntegral w
+word8char LexLevel2 w = undefined
+
