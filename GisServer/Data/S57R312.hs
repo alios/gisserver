@@ -1,4 +1,6 @@
-module GisServer.Data.S57R312 where
+{-# OPTIONS -fglasgow-exts #-}
+
+module GisServer.Data.S57R312(fields, subfields) where
 
 import Data.Maybe
 import qualified Data.Map as M
@@ -16,7 +18,7 @@ data DataFormat =
   -- | 'SubfieldLabel' is a row heading for a 2-D array or table of known length
   | SubfieldLabel 
   
-  -- | 'UnsignedInteger' is a binary integer. Length must be 1,2 or 4.
+  -- | 'UnsignedInteger' is a binary integer. Length must be 1, 2 or 4.
   | UnsignedInteger FixedLength
   
   -- | 'SignedInteger' is a two's complement binary integer. 
@@ -43,8 +45,8 @@ type Width = Int
 
 {-|7.2.2.2 Permitted S-57 (ASCII) Data domains
  
-   The domain for ASCII data is specified by a domain code. The following domain
-   codes are used in the field tables:
+   The domain for ASCII data is specified by a domain code. The following 
+   domain codes are used in the field tables:
 -}
 data AsciiDomain = 
   BasicTextDomain
@@ -69,61 +71,85 @@ newField lbl name sfs =
   let sfs' = [ fromJust $ M.lookup sf subfields | sf <- sfs]
   in Field lbl name sfs'
 
+
+
 data Subfield = 
   Subfield {
     subfieldLabel :: String,
-    subfieldAsciiFormat :: DataFormat,
+    subfieldAsciiFormat :: (DataFormat, AsciiDomain),
     subfieldBinFormat :: Maybe DataFormat,
-    subfieldDomain :: AsciiDomain,
-    subfieldName :: String
+    subfieldName :: String    
     } deriving (Show, Eq)
     
 basicString lbl name = 
-  Subfield lbl (CharacterData Nothing) Nothing BasicTextDomain name
+  Subfield lbl (CharacterData Nothing, BasicTextDomain) Nothing name
+
 date lbl name = 
-  Subfield lbl (CharacterData $ Just 8) Nothing DateDomain name
-integerN lbl name al bl= 
-  Subfield lbl (ImplicitPoint $ Just al) (Just $ UnsignedInteger bl) IntegerDomain name
-integer lbl name bl= 
-  Subfield lbl (ImplicitPoint Nothing) (Just $ UnsignedInteger bl) IntegerDomain name
+  Subfield lbl (CharacterData $ Just 8, DateDomain) Nothing name
+
+uIntegerN lbl name al bl
+   | ((bl < 1) || (bl > 4)) = error $ "bl must be in [1..4] but is " ++ show bl 
+   | (al < 0) = error $ "al must be greater 0 but is " ++ show al
+   | otherwise = Subfield lbl (ImplicitPoint $ Just al, IntegerDomain) 
+                 (Just $ UnsignedInteger bl) name
+
+uInteger lbl name bl
+ | ((bl < 1) || (bl > 4)) = error $ "bl must be in [1..4] but is " ++ show bl 
+ | otherwise = Subfield lbl (ImplicitPoint Nothing, IntegerDomain) 
+               (Just $ UnsignedInteger bl) name
+
+real lbl name = 
+  Subfield lbl (ExplicitPoint Nothing, RealDomain) Nothing name
+
+realN lbl name al
+  | (al < 0) = error $ "l must be greater 0 but is" ++ show al
+  | otherwise = Subfield lbl (ExplicitPoint $ Just al, RealDomain) Nothing name
+
+mixed lbl name al bl
+  | ((bl < 1) || (bl > 4)) = error $ "bl must be in [1..4] but is " ++ show bl 
+  | (al < 0) = error $ "al must be greater 0 but is " ++ show al
+  | otherwise = Subfield lbl (alNumCharData al) (unsignedInt bl) name
+    where alNumCharData l = (CharacterData $ Just l, AlphaNumericDomain)
+          unsignedInt l = Just $ UnsignedInteger l
   
-                
-subfields = M.fromList [ (subfieldLabel sf, sf) | sf <- subfields']
-                
+subfields = M.fromList [ (subfieldLabel sf, sf) | sf <- subfields' ]
 subfields' = 
-  [ Subfield "RCNM" (CharacterData $ Just  2) (Just $ UnsignedInteger 1) AlphaNumericDomain "Record Name"
-  , integerN "RCID" "Record identification number" 10 4
-  , Subfield "EXPP" (CharacterData $ Just  1) (Just $ UnsignedInteger 1) AlphaNumericDomain "Exchange Purpose"
-  , integerN "INTU" "Intendes usage" 1 1
+  [ mixed       "RCNM" "Record Name" 2 1
+  , uIntegerN   "RCID" "Record identification number" 10 4
+  , mixed       "EXPP" "Exchange Purpose" 1 1
+  , uIntegerN   "INTU" "Intendes usage" 1 1
   , basicString "DSNM" "Data set name"
   , basicString "EDTN" "Edition number"
   , basicString "UPDN" "Update Number"
-  , date "UADT" "Update application date"
-  , date "ISDT" "Issue date"
-  , Subfield "STED" (ExplicitPoint $ Just  4) Nothing RealDomain "Edition number of S-57"
-  , Subfield "PRSP" (CharacterData $ Just  3) (Just $ UnsignedInteger 1) AlphaNumericDomain "ProductSpecification"
+  , date        "UADT" "Update application date"
+  , date        "ISDT" "Issue date"
+  , realN       "STED" "Edition number of S-57" 4
+  , mixed       "PRSP" "ProductSpecification" 3 1
   , basicString "PSDN" "Product specification description"
   , basicString "PRED" "Product specification edition number"
-  , Subfield "PROF" (CharacterData $ Just  2) (Just $ UnsignedInteger 1) AlphaNumericDomain "Application profile identification"
-  , Subfield "AGEN" (CharacterData $ Just  2) (Just $ UnsignedInteger 2) AlphaNumericDomain "Producing agency"
+  , mixed       "PROF" "Application profile identification" 2 1
+  , mixed       "AGEN" "Producing agency" 2 2
   , basicString "COMT" "Comment" 
-  , Subfield "DSTR" (CharacterData $ Just  2) (Just $ UnsignedInteger  1) AlphaNumericDomain "Data structure"
-  , integerN "AALL" "ATTF lexical elevel" 1 1
-  , integerN "NALL" "NATF lexical level" 1 1
-  , integer "NOMR" "Number of meta records" 4    
-  , integer "NOCR" "Number of cartographic records" 4
-  , integer "NOGR" "Number of geo records" 4
-  , integer "NOLR" "Number of collection records" 4  
-  , integer "NOIN" "Number of isolated node records" 4
-  , integer "NOCN" "Number of connected node records" 4
-  , integer "NOED" "Number of edge records" 4
-  , integer "NOFA" "Number of face records" 4
+  , mixed       "DSTR" "Data structure" 2 1
+  , uIntegerN   "AALL" "ATTF lexical elevel" 1 1
+  , uIntegerN   "NALL" "NATF lexical level" 1 1
+  , uInteger    "NOMR" "Number of meta records" 4    
+  , uInteger    "NOCR" "Number of cartographic records" 4
+  , uInteger    "NOGR" "Number of geo records" 4
+  , uInteger    "NOLR" "Number of collection records" 4  
+  , uInteger    "NOIN" "Number of isolated node records" 4
+  , uInteger    "NOCN" "Number of connected node records" 4
+  , uInteger    "NOED" "Number of edge records" 4
+  , uInteger    "NOFA" "Number of face records" 4
   ]
   
 fields = M.fromList [(fieldLabel f , f) | f <- fields'] 
-
 fields' =
-  [ newField "DSID" "Data Set Identification" ["AGEN","COMT","DSNM","EDTN","EXPP","INTU","ISDT","PRED","PROF","PRSP","PSDN","RCID","RCNM","STED","UADT","UPDN"]
-  , newField "DSSI" "Data Set Structure information" ["DSTR", "AALL", "NALL", "NOMR", "NOCR", "NOGR", "NOLR", "NOIN", "NOCN", "NOED", "NOFA"]
+  [ newField "DSID" "Data Set Identification" 
+    ["AGEN","COMT","DSNM","EDTN","EXPP","INTU","ISDT","PRED","PROF","PRSP"
+    ,"PSDN","RCID","RCNM","STED","UADT","UPDN"]
+  , newField "DSSI" "Data Set Structure information" 
+    ["DSTR","AALL","NALL","NOMR","NOCR","NOGR", "NOLR","NOIN","NOCN","NOED"
+    , "NOFA"]
   ]
     
