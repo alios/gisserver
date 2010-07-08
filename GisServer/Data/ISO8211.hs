@@ -13,6 +13,8 @@ import Data.Tree
 import qualified Data.Map as M
 import qualified Data.ByteString.Lazy as B
 
+import Test.QuickCheck
+
 import GisServer.Data.Common
 
 data ExchangeFile =
@@ -43,7 +45,7 @@ data Leader =
     leader_app :: Char,
     leader_fieldCtrlLen :: Int,
     leader_dataBase :: Int64,
-    leader_charSet :: String,
+    leader_charSet :: LexicalLevel,
     leader_entryMap :: EntryMap
     } deriving (Eq, Show)
                
@@ -97,7 +99,7 @@ instance Binary DataTypeCode where
 
 instance Binary LexicalLevel where
   get = do
-    escSeq <- getStringN 3
+    escSeq <- getStringN (lexLevel 0) 3
     return $ case escSeq of
       "   " -> lexLevel 0
       "-A " -> lexLevel 1
@@ -117,8 +119,8 @@ instance Binary FieldControls where
   get = do
     structCode <- get
     typeCode <- get
-    auxCtrl <- getStringN 2
-    printableGraphics <- getStringN 2
+    auxCtrl <- getStringN (lexLevel 0) 2
+    printableGraphics <- getStringN (lexLevel 0) 2
     lexLevel <- get
     return $ FieldControls structCode typeCode auxCtrl printableGraphics lexLevel
 
@@ -126,19 +128,19 @@ type Directory = [DirEntry]
 type DirEntry = (String, Int64, Int64)
 
 
-getDirectory :: EntryMap -> Get Directory
-getDirectory m = do
+getDirectory :: LexicalLevel -> EntryMap -> Get Directory
+getDirectory l m = do
   c <- lookAhead get
   if (c == fieldTerm) 
     then do skip 1
             return []
-    else do e  <- getDirEntry m
-            es <- getDirectory m
+    else do e  <- getDirEntry l m
+            es <- getDirectory l m
             return $ e : es 
     
-getDirEntry :: EntryMap -> Get DirEntry
-getDirEntry m = do
-  tag <- getStringN $ em_sizeFieldTag m
+getDirEntry :: LexicalLevel -> EntryMap -> Get DirEntry
+getDirEntry l m = do
+  tag <- getStringN l $ em_sizeFieldTag m
   len <- getIntN $ em_sizeFieldLen m
   pos <- getIntN $ em_sizeFieldPos m  
   return (tag, fromIntegral pos, fromIntegral len)
@@ -162,7 +164,7 @@ instance Binary ExchangeFile where
 instance Binary LogicRecord where
   get = do
     leader <- get
-    dir <- getDirectory $ leader_entryMap leader
+    dir <- getDirectory (leader_charSet leader) $ leader_entryMap leader
     let fieldAreaLen = (leader_recordLength leader) - (leader_dataBase leader)
     fields <- getLazyByteString fieldAreaLen
     let dir2lookup' = dir2lookup fields (leader_fieldCtrlLen leader)
@@ -182,7 +184,7 @@ instance Binary Leader where
                     else do skip 2
                             return 0
     dataBase <- getIntN 5
-    charSet <- getStringN 3
+    charSet <- get --getStringN (lexLevel 0) 3 -- TODO
     entryMap <- get
     return $ Leader (fromIntegral recordLength) interchangeLevel id extension version app fieldCtrlLen (fromIntegral dataBase) charSet entryMap
     
@@ -223,13 +225,13 @@ parseDDRField lex tag field =
             (t2,ts) = B.splitAt 4 t2s
         in if(bs == B.empty) 
            then [] 
-           else (byteS2String lex t1, byteS2String lex t2) : splitTagPairs ts
+           else (getStringEncoded lex t1, getStringEncoded lex t2) : splitTagPairs ts
   in case tag of 
     "0000" -> FieldCtrlField 
-              (byteS2String lex (subfields !! 0)) 
+              (getStringEncoded lex (subfields !! 0)) 
               (buildTree (splitTagPairs $ subfields !! 1))
     otherwise -> DataDescriptiveField
-                 (byteS2String lex (subfields !! 0))
+                 (getStringEncoded lex (subfields !! 0))
                  (subfields !! 1)
                  (subfields !! 2)
     

@@ -23,7 +23,7 @@ data S57Data = UnsignedInt Int
 
 getExplicitPoint :: Int -> Get S57Data
 getExplicitPoint n =
-  do v <- getStringN n
+  do v <- getStringN (lexLevel 0) n
      return $ ExplicitPoint $ read v
      
 getImplicitPoint :: Int -> Get S57Data
@@ -41,11 +41,11 @@ getUnsignedInt n =
 
 getCharData :: LexicalLevel -> Maybe Int -> Get S57Data
 getCharData l (Just i) = 
-  do s <- getStringN' l i
+  do s <- getStringN l i
      return $ CharData s
      
 getCharData l Nothing = 
-  do s <- getStringTill' l recordTermChar
+  do s <- getStringTill l recordTermChar
      return $ CharData s
 
 getBitField bits =

@@ -54,7 +54,7 @@ Library
   Exposed-modules: GisServer.Data.ISO8211, GisServer.Data.S57
   
   -- Packages needed in order to build this package.
-  Build-depends: haskell98, base > 4, containers, binary, bytestring      
+  Build-depends: haskell98, base > 4, containers, binary, bytestring, QuickCheck > 2.0      
   
   -- Modules not exported by this package.
   -- Other-modules:       
