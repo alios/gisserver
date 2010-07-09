@@ -31,9 +31,10 @@ data DataFormat =
   | SignedInteger FixedLength
   deriving (Show, Read, Eq)
 
-           
-asciiFormatParser :: LexicalLevel -> AsciiFormat -> Get S57Data
-asciiFormatParser l (format, domain) =
+
+asciiFormatParser = asciiFormatParser' (lexLevel 0)           
+asciiFormatParser' :: LexicalLevel -> AsciiFormat -> Get S57Data
+asciiFormatParser' l (format, domain) =
   let (get', con) = case (format) of
         (CharacterData (Just len)) -> (getStringN l len, S57String) 
         (CharacterData Nothing) -> (getStringTill l, S57String) 
