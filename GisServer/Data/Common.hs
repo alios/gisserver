@@ -22,7 +22,7 @@ import Data.Text as T
 import  qualified  Data.Encoding as E
 import Data.Encoding.ASCII
 import Data.Encoding.UTF16
-import Data.Encoding.ISO885915
+import Data.Encoding.ISO88591
 
 data LexicalLevel = 
   LexLevel0 | LexLevel1 | LexLevel2                                
@@ -38,8 +38,10 @@ recordTermChar = '\US'
 recordTerm :: Word8
 recordTerm = fromIntegral $ ord recordTermChar
 
-getStringTill :: LexicalLevel -> Char -> Get String
-getStringTill = undefined
+getStringTill :: LexicalLevel -> Get String
+getStringTill l = getStringTill' l fieldTerm
+
+getStringTill' l c = undefined
 
 --getStringTill = getStringTill' LexLevel0
 --getStringTill' l c = do
@@ -57,8 +59,8 @@ getIntN n = fmap read $ getStringN LexLevel0 n
 getStringN l n = fmap (getStringEncoded l) $ getLazyByteString $ fromIntegral n
 
 getStringEncoded LexLevel0 = E.decodeLazyByteString ASCII
-getStringEncoded LexLevel1 = E.decodeLazyByteString ISO885915
-getStringEncoded LexLevel2 = E.decodeLazyByteString UTF16
+getStringEncoded LexLevel1 = E.decodeLazyByteString ISO88591
+getStringEncoded LexLevel2 = E.decodeLazyByteString UTF16LE
 
 
 getInt :: Bool -> Int -> Get Int       

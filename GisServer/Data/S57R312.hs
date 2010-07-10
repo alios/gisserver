@@ -3,7 +3,12 @@
 module GisServer.Data.S57R312(fields, subfields) where
 
 import Data.Maybe
+import Data.Time
+import Data.Binary
 import qualified Data.Map as M
+import qualified Data.ByteString.Lazy as B
+
+import GisServer.Data.Common
 
 {-|7.2.2.1 Data format
    Subfield data formats are specified by ISO/IEC 8211. The allowable data 
@@ -25,6 +30,18 @@ data DataFormat =
   --   Length must be 1,2 or 4
   | SignedInteger FixedLength
   deriving (Show, Read, Eq)
+
+
+asciiFormatParser = asciiFormatParser' (lexLevel 0)           
+asciiFormatParser' :: LexicalLevel -> AsciiFormat -> Get S57Data
+asciiFormatParser' l (format, domain) =
+  let (get', con) = case (format) of
+        (CharacterData (Just len)) -> (getStringN l len, S57String) 
+        (CharacterData Nothing) -> (getStringTill l, S57String) 
+      p = case (domain) of
+        otherwise -> id
+  in fmap (con.p) get'
+
 
 
 {-|An extend of X(n) ('Just') indicates a fixed length subfield of 
@@ -59,7 +76,19 @@ data AsciiDomain =
   | HexDomain
   deriving (Show, Read, Enum, Eq)
            
+data S57Data =
+  S57String String
+  | S57Integer Integer
+  | S57Real Double
+  | S57Date UTCTime
+  | S57Bytes B.ByteString
+  deriving (Eq, Show)
            
+type AsciiFormat = (DataFormat, AsciiDomain)           
+          
+                          
+                   
+                   
 data Field =
   Field { 
     fieldLabel :: String, 
@@ -76,7 +105,7 @@ newField lbl name sfs =
 data Subfield = 
   Subfield {
     subfieldLabel :: String,
-    subfieldAsciiFormat :: (DataFormat, AsciiDomain),
+    subfieldAsciiFormat :: AsciiFormat,
     subfieldBinFormat :: Maybe DataFormat,
     subfieldName :: String    
     } deriving (Show, Eq)
